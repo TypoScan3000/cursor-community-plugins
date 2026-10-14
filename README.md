@@ -107,6 +107,50 @@ See the [Open Plugins specification](https://open-plugins.com/plugin-builders/sp
 - **URL State**: [nuqs](https://nuqs.47ng.com)
 - **Linting**: [Biome](https://biomejs.dev)
 
+## Database migrations
+
+Create migrations with `supabase migration new <name>`. The **Supabase
+migrations** workflow (`.github/workflows/supabase-migrations.yml`) then:
+
+- On pull requests that touch `supabase/`, applies every migration to a fresh
+  database, so broken SQL fails before merge.
+- On merges to `main`, applies the migrations that merge added to production,
+  once someone approves the `production` environment. It refuses if production
+  is missing any other migration or has one the repo doesn't, so a history
+  that's out of sync can't replay old migrations.
+- When run by hand (Actions → Supabase migrations → Run workflow), lists what
+  production is missing without applying anything.
+
+Vercel deploys the same merge in parallel, so a migration has to work with both
+the old and the new code: add tables and columns first, and remove them in a
+later PR. If new code can't run without its migration, merge the migration in
+its own PR first.
+
+### One-time setup
+
+The production job stays off until a repo admin does this:
+
+1. In Supabase, create a
+   [personal access token](https://supabase.com/docs/guides/platform/personal-access-tokens)
+   scoped to the Cursor Directory project, with read access to Project
+   Settings, API Keys, and API Key Secrets. Note the database password
+   (Project Settings → Database). The app only uses API keys, so resetting the
+   password doesn't affect it.
+2. In GitHub → Settings → Environments, create `production`. Add required
+   reviewers, limit deployment branches to `main`, and add the secrets
+   `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD`.
+3. Line up production's migration history with the repo. Earlier migrations
+   were applied by hand, so the history may be empty or use other version
+   numbers. With the CLI, run `supabase link --project-ref <ref>` and
+   `supabase migration list`. Mark every migration that's already in
+   production as applied with
+   `supabase migration repair --status applied <version>...`, and remove
+   versions the repo doesn't have with `--status reverted`. Repeat until
+   nothing is missing on either side.
+4. In GitHub → Settings → Variables, add the repository variable
+   `SUPABASE_PROJECT_ID` (the project ref). This turns the production job on.
+   Run the workflow by hand once to confirm it reports nothing pending.
+
 ## Plugin security scan
 
 Submitted plugins are auto-reviewed by a Cursor SDK agent (`composer-2`) running
